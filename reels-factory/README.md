@@ -35,6 +35,35 @@ node scripts/render-reels.mjs
 #    → out/<id>.mp4 로 출력
 ```
 
+## 원커맨드 파이프라인: 사진 → 카드 → 릴스
+
+```bash
+# 사진 1장으로 카드 생성 + 릴스 렌더링까지 한 번에
+node scripts/photo-to-reel.mjs public/photos/golden.jpg 해피 "태양의 전령"
+# → public/cards/해피.png(카드) + out/해피.mp4(릴스)
+
+# 칭호를 생략하면 Gemini가 자동 생성
+node scripts/photo-to-reel.mjs ~/Downloads/dog.jpg 몽실이
+```
+
+- **`GEMINI_API_KEY` 환경변수 설정 시**: 사진을 Gemini 이미지 모델로 보내
+  타로 카드풍 일러스트를 실제 생성 (모델은 `GEMINI_IMAGE_MODEL`로 변경 가능)
+- **키가 없으면**: 이름·칭호가 박힌 플레이스홀더 카드로 대체 (파이프라인 검증용)
+- 키는 절대 커밋하지 말 것 — `.env`는 `.gitignore`에 포함됨
+
+## 📸 사진 소싱 규칙 (중요)
+
+| 소스 | 사용 가능? | 비고 |
+|---|---|---|
+| 구글 이미지 검색 | ❌ **절대 금지** | 저작권 침해 — 상업 마케팅에 쓰면 법적 리스크 |
+| 고객 DM 사진 | ✅ | **"콘텐츠 활용에 동의합니다" 한 줄 동의** 받은 것만 |
+| 지인 반려견 | ✅ | 동의 받고 사용 — 초기 실전 콘텐츠로 최적 |
+| 무료 스톡 (Unsplash·Pexels·Pixabay) | ✅ | 상업적 사용 OK, 표기 불필요 — 데모용 |
+| AI 생성 사진 | ✅ | 데모만 — 실전에선 "진짜 변신" 신뢰를 해침 |
+
+- 사용한 사진은 `public/photos/CREDITS.md`에 출처 기록
+- 사진 스펙: 얼굴 정면~약측면, 밝은 조명, 단순한 배경, 800px 이상, 얼굴 중앙 배치
+
 ## 커스터마이즈 포인트
 
 - 문구/사진/이름은 전부 props (`reels.json`) — 코드 수정 불필요
