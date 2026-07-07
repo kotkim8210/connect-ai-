@@ -1,28 +1,56 @@
 #!/usr/bin/env node
 /**
- * 강아지 사진 → 미스틱 카드 이미지 생성.
+ * 강아지 사진 → 미스틱 카드 이미지 생성 (리서치 기반 v2).
  *
- * - GEMINI_API_KEY 있으면: Gemini 이미지 모델로 타로 카드 일러스트 생성 (+ 칭호 자동 생성)
- * - 없으면: 이름·칭호가 박힌 플레이스홀더 SVG 카드 생성 (파이프라인 검증용)
+ * 핵심 설계 (근거: _company/market-validation/카드_이미지_리서치.md):
+ * - 결제 전환의 생명선은 "닮음(likeness)" → 2단계 파이프라인:
+ *   ① 텍스트 모델로 사진에서 개체 특징(품종·털색·무늬·눈·귀) 추출
+ *   ② 특징 보존 지시를 프롬프트 앞에, 스타일 지시를 뒤에 배치해 이미지 생성
+ * - 한글 텍스트는 이미지에 굽지 않음(자모 깨짐) → 제목은 Remotion 오버레이
+ * - 3:4 종횡비는 imageConfig 파라미터 + 프롬프트 이중 지정
+ * - 기본 모델: Nano Banana 2 Lite (Google 권장 이전 대상, 장당 ~$0.034)
  *
- * CLI:  node scripts/generate-card.mjs <사진경로> <강아지이름> [칭호]
- * 출력: public/cards/<이름>.png(또는 .svg) — 콘솔에 reels.json용 props 조각 출력
+ * CLI:  node scripts/generate-card.mjs <사진경로> <강아지이름> [칭호] [--style=royal]
+ * 스타일: royal(기본) | hanbok | idphoto | sanrio | tarot
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const API_KEY = process.env.GEMINI_API_KEY;
-const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL ?? "gemini-2.5-flash-image";
+const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL ?? "gemini-3.1-flash-lite-image";
 const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL ?? "gemini-2.5-flash";
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
-const CARD_PROMPT = (name, title) =>
-  `Transform this dog photo into a mystical Korean-style tarot card illustration.
-Style: cute Sanrio-inspired (K-cute), night sky with gold crescent moon and stars,
-deep violet/indigo background (#2a1a5e to #0d0a2c), gold ornamental border,
-the dog drawn as an adorable heroic character in the center, soft glow.
-The card is titled "${title}" for a dog named "${name}".
-Portrait orientation 3:4. No text or letters in the image.`;
+/**
+ * 시장 검증된 스타일 프리셋 (팔리는 순서대로):
+ * royal  — Crown & Paw 공식: 르네상스 귀족/왕실 초상 (첫해 $10M 검증)
+ * hanbok — 한국형: 한복/설빔 (헬로우봇 검증)
+ * idphoto— 한국형: 증명사진 트렌드 (Z세대 유행)
+ * sanrio — K-cute: 파스텔 산리오 문법 (2030 여성 감성)
+ * tarot  — 기존 Doggie Mystic 미스틱 타로 톤
+ */
+const STYLES = {
+  royal: `a majestic Renaissance royal portrait: the dog dressed in ornate king's regalia with
+a deep crimson velvet robe, gold-embroidered collar and a jeweled crown, dark oil-painting
+background with dramatic Rembrandt lighting, rich baroque color palette, visible oil brush
+texture, museum-quality classical portrait framing`,
+  hanbok: `an elegant Korean traditional portrait: the dog wearing a beautiful silk hanbok with
+saekdong (rainbow-striped) sleeves and a norigae pendant, seated gracefully before a folding
+screen with subtle dancheong patterns, soft festive lighting, warm celebratory palette of
+jade green, coral pink and gold`,
+  idphoto: `a formal Korean-style ID photograph: the dog in a neat navy suit with a crisp white
+shirt, perfectly centered head-and-shoulders composition against a soft sky-blue gradient
+studio background, clean even lighting, earnest dignified expression, photorealistic studio
+portrait quality`,
+  sanrio: `an adorable pastel kawaii illustration: the dog as a soft rounded chibi character
+with big sparkling eyes, surrounded by ribbons, hearts and tiny stars, gentle pastel palette
+of baby pink, lavender and cream, clean thick outlines, dreamy sticker-art finish`,
+  tarot: `a mystical tarot card illustration: the dog as a heroic guardian character beneath a
+gold crescent moon and constellation patterns, deep violet-indigo night palette with warm
+gold accents, ornate celestial symbols, soft ethereal glow, premium gold-foil aesthetic`,
+};
+
+const clean = (s) => s.replace(/\s+/g, " ").trim();
 
 async function gemini(model, body) {
   const res = await fetch(`${API_BASE}/${model}:generateContent?key=${API_KEY}`, {
@@ -34,27 +62,53 @@ async function gemini(model, body) {
   return res.json();
 }
 
-async function generateTitle(name) {
+const inlinePhoto = (photoPath) => ({
+  inline_data: {
+    mime_type: photoPath.endsWith(".png") ? "image/png" : "image/jpeg",
+    data: readFileSync(photoPath).toString("base64"),
+  },
+});
+
+/** 1단계: 사진에서 닮음 보존용 개체 특징 + 칭호 추출 */
+async function analyzeDog(photoPath, name, title) {
   const out = await gemini(TEXT_MODEL, {
     contents: [{
-      parts: [{
-        text: `강아지 "${name}"의 미스틱 카드 칭호를 1개만 만들어줘. 형식: 한국어 2~5글자 명사구 (예: 달빛 수호자, 불꽃의 모험가). 칭호만 출력.`,
-      }],
-    }],
-  });
-  return out.candidates?.[0]?.content?.parts?.[0]?.text?.trim().replace(/["\n]/g, "") ?? "전설의 친구";
-}
-
-async function generateCardImage(photoPath, name, title, outPath) {
-  const imageB64 = readFileSync(photoPath).toString("base64");
-  const mime = photoPath.endsWith(".png") ? "image/png" : "image/jpeg";
-  const out = await gemini(IMAGE_MODEL, {
-    contents: [{
       parts: [
-        { inline_data: { mime_type: mime, data: imageB64 } },
-        { text: CARD_PROMPT(name, title) },
+        inlinePhoto(photoPath),
+        {
+          text: `Analyze this dog photo and return JSON only:
+{"features": "<one English sentence listing breed (or best guess), coat color and texture,
+distinctive markings and their exact locations, eye color, ear shape/set, muzzle shape,
+and any unique identifying traits>",
+"title": "<한국어 2~5글자 카드 칭호, 예: 달빛 수호자, 태양의 전령${title ? ` — 사용자가 지정한 칭호 "${title}"를 그대로 사용` : `, 강아지 인상에 어울리게 창작`}>"}`,
+        },
       ],
     }],
+    generationConfig: { responseMimeType: "application/json" },
+  });
+  const text = out.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+  const parsed = JSON.parse(text);
+  return {
+    features: parsed.features ?? "a dog with its natural coat and features",
+    title: title || parsed.title || "전설의 친구",
+  };
+}
+
+/** 2단계: 닮음 보존 우선 + 스타일 후치 프롬프트 (Google 공식 가이드 구조) */
+const buildPrompt = (features, styleKey) => clean(`
+Using the provided photo of the dog, preserve its exact likeness: ${features}.
+Keep the same face structure, proportions, fur markings and eye color so the owner
+instantly recognizes their own dog.
+Transform this photograph into ${STYLES[styleKey]}.
+Compose it as a 3:4 portrait trading-card illustration with the dog's face as the
+clear focal point in the upper two-thirds, and quiet, uncluttered space along the
+bottom edge for a title to be added later. A clean illustration with no text,
+letters or watermarks anywhere in the image.`);
+
+async function generateCardImage(photoPath, features, styleKey, outPath) {
+  const out = await gemini(IMAGE_MODEL, {
+    contents: [{ parts: [inlinePhoto(photoPath), { text: buildPrompt(features, styleKey) }] }],
+    generationConfig: { imageConfig: { aspectRatio: "3:4" } },
   });
   const part = out.candidates?.[0]?.content?.parts?.find((p) => p.inlineData ?? p.inline_data);
   const data = (part?.inlineData ?? part?.inline_data)?.data;
@@ -84,13 +138,16 @@ function placeholderCard(name, title, outPath) {
   writeFileSync(outPath, svg);
 }
 
-export async function generateCard({ photoPath, name, title }) {
+export async function generateCard({ photoPath, name, title, style = "royal" }) {
+  if (!STYLES[style]) {
+    throw new Error(`알 수 없는 스타일: ${style} (가능: ${Object.keys(STYLES).join(", ")})`);
+  }
   mkdirSync("public/cards", { recursive: true });
   if (API_KEY) {
-    const finalTitle = title || (await generateTitle(name));
-    const outPath = path.join("public/cards", `${name}.png`);
-    await generateCardImage(photoPath, name, finalTitle, outPath);
-    return { cardPath: outPath, title: finalTitle };
+    const analyzed = await analyzeDog(photoPath, name, title);
+    const outPath = path.join("public/cards", `${name}-${style}.png`);
+    await generateCardImage(photoPath, analyzed.features, style, outPath);
+    return { cardPath: outPath, title: analyzed.title };
   }
   const finalTitle = title || "전설의 친구";
   const outPath = path.join("public/cards", `${name}.svg`);
@@ -100,12 +157,14 @@ export async function generateCard({ photoPath, name, title }) {
 }
 
 // CLI 실행
-if (process.argv[1].endsWith("generate-card.mjs")) {
-  const [photoPath, name, title] = process.argv.slice(2);
+if (process.argv[1]?.endsWith("generate-card.mjs")) {
+  const styleArg = process.argv.find((a) => a.startsWith("--style="));
+  const style = styleArg ? styleArg.split("=")[1] : "royal";
+  const [photoPath, name, title] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
   if (!photoPath || !name) {
-    console.error("사용법: node scripts/generate-card.mjs <사진경로> <강아지이름> [칭호]");
+    console.error(`사용법: node scripts/generate-card.mjs <사진경로> <강아지이름> [칭호] [--style=${Object.keys(STYLES).join("|")}]`);
     process.exit(1);
   }
-  const { cardPath, title: t } = await generateCard({ photoPath, name, title });
-  console.log(`✅ 카드 생성: ${cardPath} (칭호: ${t})`);
+  const { cardPath, title: t } = await generateCard({ photoPath, name, title, style });
+  console.log(`✅ 카드 생성: ${cardPath} (칭호: ${t}, 스타일: ${style})`);
 }

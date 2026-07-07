@@ -13,9 +13,11 @@ import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { generateCard } from "./generate-card.mjs";
 
-const [photoArg, name, titleArg] = process.argv.slice(2);
+const styleArg = process.argv.find((a) => a.startsWith("--style="));
+const style = styleArg ? styleArg.split("=")[1] : "royal";
+const [photoArg, name, titleArg] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 if (!photoArg || !name) {
-  console.error("사용법: node scripts/photo-to-reel.mjs <사진경로> <강아지이름> [칭호]");
+  console.error("사용법: node scripts/photo-to-reel.mjs <사진경로> <강아지이름> [칭호] [--style=royal|hanbok|idphoto|sanrio|tarot]");
   process.exit(1);
 }
 if (!existsSync(photoArg)) {
@@ -33,8 +35,8 @@ if (!path.resolve(photoArg).startsWith(pub + path.sep)) {
   console.log(`📥 사진 복사: ${photoArg} → ${photoPath}`);
 }
 
-console.log(`🎨 카드 생성 중... (${name})`);
-const { cardPath, title } = await generateCard({ photoPath, name, title: titleArg });
+console.log(`🎨 카드 생성 중... (${name}, 스타일: ${style})`);
+const { cardPath, title } = await generateCard({ photoPath, name, title: titleArg, style });
 console.log(`   → ${cardPath} (칭호: ${title})`);
 
 const props = {

@@ -38,17 +38,29 @@ node scripts/render-reels.mjs
 ## 원커맨드 파이프라인: 사진 → 카드 → 릴스
 
 ```bash
-# 사진 1장으로 카드 생성 + 릴스 렌더링까지 한 번에
+# 사진 1장으로 카드 생성 + 릴스 렌더링까지 한 번에 (기본 스타일: royal)
 node scripts/photo-to-reel.mjs public/photos/golden.jpg 해피 "태양의 전령"
-# → public/cards/해피.png(카드) + out/해피.mp4(릴스)
 
-# 칭호를 생략하면 Gemini가 자동 생성
-node scripts/photo-to-reel.mjs ~/Downloads/dog.jpg 몽실이
+# 스타일 선택 (시장 검증 리서치 기반 5종)
+node scripts/photo-to-reel.mjs ~/Downloads/dog.jpg 몽실이 --style=hanbok
 ```
 
-- **`GEMINI_API_KEY` 환경변수 설정 시**: 사진을 Gemini 이미지 모델로 보내
-  타로 카드풍 일러스트를 실제 생성 (모델은 `GEMINI_IMAGE_MODEL`로 변경 가능)
+**스타일 프리셋** (근거: `_company/market-validation/카드_이미지_리서치.md`):
+
+| 스타일 | 콘셉트 | 검증 근거 |
+|---|---|---|
+| `royal` (기본) | 르네상스 왕실 초상 (크라운·벨벳 로브·유화) | Crown & Paw 첫해 $10M |
+| `hanbok` | 한복/설빔 + 색동 | 헬로우봇 AI 프로필 |
+| `idphoto` | 증명사진 (하늘색 배경·정장) | 한국 Z세대 트렌드 |
+| `sanrio` | 파스텔 키치 치비 캐릭터 | 2030 여성 감성 |
+| `tarot` | 미스틱 타로 (달·별·금박) | Doggie Mystic 기본 톤 |
+
+- **`GEMINI_API_KEY` 설정 시**: 2단계 파이프라인 실행 —
+  ① 텍스트 모델이 사진에서 개체 특징(품종·털색·무늬·눈·귀) 추출 (닮음 보존의 핵심)
+  ② Nano Banana 2 Lite(`gemini-3.1-flash-lite-image`, 장당 ≈₩47)로 3:4 카드 일러스트 생성
+  — 모델 변경: `GEMINI_IMAGE_MODEL` (고품질·4K는 Nano Banana Pro `gemini-3-pro-image` 계열)
 - **키가 없으면**: 이름·칭호가 박힌 플레이스홀더 카드로 대체 (파이프라인 검증용)
+- 카드 제목·이름 한글 텍스트는 이미지에 굽지 않고 Remotion 오버레이로 처리 (한글 깨짐 방지)
 - 키는 절대 커밋하지 말 것 — `.env`는 `.gitignore`에 포함됨
 
 ## 📸 사진 소싱 규칙 (중요)
