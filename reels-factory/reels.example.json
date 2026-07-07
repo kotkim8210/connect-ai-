@@ -1,0 +1,28 @@
+[
+  {
+    "id": "mongsil",
+    "props": {
+      "dogName": "몽실이",
+      "cardTitle": "달빛 수호자",
+      "dogPhotoSrc": "sample-dog.svg",
+      "cardImageSrc": "sample-card.svg",
+      "hookText": "우리 강아지가 전설의 캐릭터가 된다면?",
+      "transformText": "AI가 운명의 카드를 그리는 중",
+      "ctaText": "📸 DM으로 강아지 사진 보내면\n무료로 만들어드려요!",
+      "handle": "@doggie.mystic"
+    }
+  },
+  {
+    "id": "choco",
+    "props": {
+      "dogName": "초코",
+      "cardTitle": "불꽃의 모험가",
+      "dogPhotoSrc": "photos/choco.jpg",
+      "cardImageSrc": "cards/choco-card.png",
+      "hookText": "초코의 전생 캐릭터는 과연?",
+      "transformText": "AI가 운명의 카드를 그리는 중",
+      "ctaText": "📸 DM으로 강아지 사진 보내면\n무료로 만들어드려요!",
+      "handle": "@doggie.mystic"
+    }
+  }
+]
